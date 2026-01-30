@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Préstamos Josue - Curridabat</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0d0d0d;
+            color: #c0c0c0;
+            padding: 20px;
+        }
+        h1, h2 { color: #ffd700; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card {
+            background: #151515;
+            border: 1px solid #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .form-grid {
+            display: grid;
+            gap: 15px;
+        }
+        @media (min-width: 768px) { .form-grid { grid-template-columns: 1fr 1fr; } }
+        label { color: #ffd700; font-weight: bold; display: block; margin-bottom: 6px; }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            color: white;
+        }
+        button {
+            padding: 12px 20px;
+            background: #b8860b;
+            color: black;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        button:hover { background: #ffd700; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #2a2a2a; }
+        th { background: #111; color: #ffd700; }
+        .actions button { margin-right: 8px; padding: 6px 12px; font-size: 14px; }
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: #151515;
+            border: 2px solid #ffd700;
+            border-radius: 10px;
+            padding: 25px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .close { float: right; font-size: 30px; cursor: pointer; color: #ffd700; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Préstamos Josue</h1>
+
+    <!-- Formulario nuevo préstamo -->
+    <div class="card">
+        <h2>Nuevo Préstamo</h2>
+        <form id="frmPrestamo" onsubmit="guardarPrestamo(event)">
+            <div class="form-grid">
+                <div>
+                    <label>Cliente</label>
+                    <input type="text" id="cliente" required>
+                </div>
+                <div>
+                    <label>Monto (₡)</label>
+                    <input type="number" id="monto" min="1" required>
+                </div>
+                <div>
+                    <label>Frecuencia</label>
+                    <select id="frecuencia" required>
+                        <option value="Semanal">Semanal</option>
+                        <option value="Quincenal">Quincenal</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Notas</label>
+                    <textarea id="notas" rows="2"></textarea>
+                </div>
+            </div>
+            <button type="submit">Guardar Préstamo</button>
+        </form>
+    </div>
+
+    <!-- Lista -->
+    <div class="card">
+        <h2>Préstamos</h2>
+        <table id="tabla">
+            <thead>
+                <tr>
+                    <th>Cliente</th>
+                    <th>Monto</th>
+                    <th>Pendiente</th>
+                    <th>Interés Cobrado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Abonos -->
+<div id="modalAbonos" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="document.getElementById('modalAbonos').classList.remove('active')">×</span>
+        <h2>Abonos de <span id="clienteModal"></span></h2>
+
+        <form id="frmAbono" onsubmit="registrarAbono(event)">
+            <label>Fecha</label>
+            <input type="date" id="fechaAbono" required>
+
+            <label>Monto Total Pagado (₡)</label>
+            <input type="number" id="montoTotal" min="1" required>
+
+            <label>Parte a Interés (₡)</label>
+            <input type="number" id="parteInteres" min="0" required>
+
+            <label>Parte a Capital (₡)</label>
+            <input type="number" id="parteCapital" min="0" required>
+
+            <button type="submit">Registrar Abono</button>
+        </form>
+
+        <h3>Historial</h3>
+        <div id="historial"></div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyABHBCokGpmW-Wp96TOvfegyI4gXy19S-M",
+      authDomain: "prestamos-curridabat.firebaseapp.com",
+      projectId: "prestamos-curridabat",
+      storageBucket: "prestamos-curridabat.firebasestorage.app",
+      messagingSenderId: "1063162549523",
+      appId: "1:1063162549523:web:4ad62d10de3e34b9b7f6e6"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let prestamoIdActual = null;
+
+    window.guardarPrestamo = async (e) => {
+        e.preventDefault();
+        const data = {
+            cliente: document.getElementById('cliente').value.trim(),
+            monto: Number(document.getElementById('monto').value),
+            frecuencia: document.getElementById('frecuencia').value,
+            notas: document.getElementById('notas').value.trim(),
+            capitalPendiente: Number(document.getElementById('monto').value),
+            interesCobrado: 0,
+            createdAt: new Date().toISOString()
+        };
+
+        try {
+            await addDoc(collection(db, "prestamos"), data);
+            alert('Guardado!');
+            document.getElementById('frmPrestamo').reset();
+            cargarLista();
+        } catch(e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
+    async function cargarLista() {
+        const q = query(collection(db, "prestamos"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        const tbody = document.querySelector('#tabla tbody');
+        tbody.innerHTML = '';
+
+        snap.forEach(s => {
+            const p = s.data();
+            p.id = s.id;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${p.cliente}</td>
+                <td>₡${p.monto.toLocaleString()}</td>
+                <td>₡${p.capitalPendiente.toLocaleString()}</td>
+                <td>₡${(p.interesCobrado||0).toLocaleString()}</td>
+                <td>
+                    <button onclick="abrirModal('${p.id}', '${p.cliente}')">Abonos</button>
+                    <button onclick="borrar('${p.id}')">Borrar</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    window.abrirModal = async (id, cliente) => {
+        prestamoIdActual = id;
+        document.getElementById('clienteModal').textContent = cliente;
+        document.getElementById('modalAbonos').classList.add('active');
+
+        // Historial
+        const q = query(collection(db, "abonos"), where("prestamoId","==",id));
+        const snap = await getDocs(q);
+        let html = '';
+        snap.forEach(d => {
+            const a = d.data();
+            html += `<p>${a.fecha} - ₡${a.montoTotal.toLocaleString()} (Int: ${a.parteInteres} | Cap: ${a.parteCapital})</p>`;
+        });
+        document.getElementById('historial').innerHTML = html || '<p>Sin abonos aún</p>';
+    };
+
+    window.registrarAbono = async (e) => {
+        e.preventDefault();
+        const montoTotal = Number(document.getElementById('montoTotal').value);
+        const parteInteres = Number(document.getElementById('parteInteres').value);
+        const parteCapital = Number(document.getElementById('parteCapital').value);
+
+        if (parteInteres + parteCapital !== montoTotal) {
+            alert('Interés + Capital debe sumar el monto total');
+            return;
+        }
+
+        const data = {
+            prestamoId: prestamoIdActual,
+            fecha: document.getElementById('fechaAbono').value,
+            montoTotal,
+            parteInteres,
+            parteCapital,
+            createdAt: new Date().toISOString()
+        };
+
+        try {
+            await addDoc(collection(db, "abonos"), data);
+
+            const ref = doc(db, "prestamos", prestamoIdActual);
+            const prestamo = (await getDoc(ref)).data();
+            await updateDoc(ref, {
+                capitalPendiente: prestamo.capitalPendiente - parteCapital,
+                interesCobrado: (prestamo.interesCobrado || 0) + parteInteres
+            });
+
+            alert('Abono OK');
+            document.getElementById('frmAbono').reset();
+            abrirModal(prestamoIdActual, document.getElementById('clienteModal').textContent);
+            cargarLista();
+        } catch(e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
+    window.borrar = async (id) => {
+        if (!confirm('¿Borrar este préstamo?')) return;
+        try {
+            await deleteDoc(doc(db, "prestamos", id));
+            alert('Borrado');
+            cargarLista();
+        } catch(e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
+    // Cargar al inicio
+    cargarLista();
+</script>
+</body>
+</html>
